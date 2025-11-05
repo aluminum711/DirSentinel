@@ -1,0 +1,21 @@
+{
+    "check_interval_seconds": 10,
+    "policies": [
+        {
+            "path": "C:\\Users\\YourUser\\Downloads",
+            "policy": {
+                "type": "percentage",
+                "value": 80
+            },
+            "allowed_extensions": [".tmp", ".log"]
+        },
+        {
+            "path": "D:\\Temp",
+            "policy": {
+                "type": "size_gb",
+                "value": 10
+            },
+            "allowed_extensions": [".bak"]
+        }
+    ]
+}
