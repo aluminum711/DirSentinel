@@ -1,5 +1,8 @@
 # DirSentinel
 
+> 语言切换 / Language: 若需英文版文档，请查看 [README_en.md](README_en.md)。
+> For English documentation, see [README_en.md](README_en.md).
+
 ## 1. 项目概述
 
 `DirSentinel` 是一个在后台运行的 Windows 服务，旨在自动管理指定文件夹的磁盘空间。
