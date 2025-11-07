@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdio.h>
+#ifdef ENABLE_REGEX
+#include <regex.h>
+#endif
 
 static volatile int g_monitoring = 0;
 
@@ -71,6 +74,56 @@ static ULONGLONG get_directory_size(const char *path)
     return total_size.QuadPart;
 }
 
+static int filename_matches_allowed(const char *filename, monitored_path *policy)
+{
+    if (!filename || !policy)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < policy->num_extensions; i++)
+    {
+        const char *pattern = policy->allowed_extensions[i];
+        if (!pattern)
+            continue;
+
+        // Backward-compatible: if pattern starts with '.', treat as literal extension match
+        if (pattern[0] == '.')
+        {
+            const char *ext = strrchr(filename, '.');
+            if (ext && strcmp(ext, pattern) == 0)
+            {
+                return 1;
+            }
+            continue;
+        }
+
+        // Otherwise, treat pattern as POSIX extended regular expression against the filename
+#ifdef ENABLE_REGEX
+        regex_t re;
+        int rc = regcomp(&re, pattern, REG_EXTENDED);
+        if (rc == 0)
+        {
+            rc = regexec(&re, filename, 0, NULL, 0);
+            regfree(&re);
+            if (rc == 0)
+            {
+                return 1;
+            }
+        }
+        else
+        {
+            // If regex compilation fails, skip this pattern silently
+        }
+#else
+        // Regex disabled at build time; skip non-extension patterns
+        continue;
+#endif
+    }
+
+    return 0;
+}
+
 static int check_policy(monitored_path *path)
 {
     ULONGLONG dir_size = get_directory_size(path->path);
@@ -122,27 +175,59 @@ static void find_oldest_file_recursive(const char *path, monitored_path *policy,
         {
             if (strcmp(find_data.cFileName, ".") != 0 && strcmp(find_data.cFileName, "..") != 0)
             {
-                char sub_dir_path[MAX_PATH];
-                sprintf(sub_dir_path, "%s\\%s", path, find_data.cFileName);
-                find_oldest_file_recursive(sub_dir_path, policy, oldest_file_path, oldest_time);
+                // Decide whether to descend into this subdirectory based on config
+                int descend = policy->recursive ? 1 : 0;
+
+                // If recursive is disabled, skip all subdirectories
+                if (!policy->recursive)
+                {
+                    descend = 0;
+                }
+                else
+                {
+                    // If included_subdirs is provided, only descend into those
+                    if (policy->num_included_subdirs > 0)
+                    {
+                        descend = 0;
+                        for (int k = 0; k < policy->num_included_subdirs; k++)
+                        {
+                            if (strcmp(find_data.cFileName, policy->included_subdirs[k]) == 0)
+                            {
+                                descend = 1;
+                                break;
+                            }
+                        }
+                    }
+                    // If excluded_subdirs contains this dir, do not descend
+                    if (descend && policy->num_excluded_subdirs > 0)
+                    {
+                        for (int k = 0; k < policy->num_excluded_subdirs; k++)
+                        {
+                            if (strcmp(find_data.cFileName, policy->excluded_subdirs[k]) == 0)
+                            {
+                                descend = 0;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (descend)
+                {
+                    char sub_dir_path[MAX_PATH];
+                    sprintf(sub_dir_path, "%s\\%s", path, find_data.cFileName);
+                    find_oldest_file_recursive(sub_dir_path, policy, oldest_file_path, oldest_time);
+                }
             }
         }
         else
         {
-            const char *ext = strrchr(find_data.cFileName, '.');
-            if (ext)
+            if (filename_matches_allowed(find_data.cFileName, policy))
             {
-                for (int i = 0; i < policy->num_extensions; i++)
+                if (CompareFileTime(&find_data.ftLastWriteTime, oldest_time) < 0)
                 {
-                    if (strcmp(ext, policy->allowed_extensions[i]) == 0)
-                    {
-                        if (CompareFileTime(&find_data.ftLastWriteTime, oldest_time) < 0)
-                        {
-                            *oldest_time = find_data.ftLastWriteTime;
-                            sprintf(oldest_file_path, "%s\\%s", path, find_data.cFileName);
-                        }
-                        break;
-                    }
+                    *oldest_time = find_data.ftLastWriteTime;
+                    sprintf(oldest_file_path, "%s\\%s", path, find_data.cFileName);
                 }
             }
         }

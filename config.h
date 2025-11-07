@@ -12,6 +12,11 @@ typedef struct {
     double value;
     char **allowed_extensions;
     int num_extensions;
+    int recursive; // 1 = recurse subdirectories, 0 = only top-level
+    char **excluded_subdirs; // names of immediate subdirectories to skip
+    int num_excluded_subdirs;
+    char **included_subdirs; // if provided, only descend into these subdirectories
+    int num_included_subdirs;
 } monitored_path;
 
 typedef struct {

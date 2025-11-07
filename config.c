@@ -83,6 +83,51 @@ configuration *load_config(const char *filename)
         {
             config->paths[i].allowed_extensions[j] = strdup(cJSON_GetArrayItem(extensions, j)->valuestring);
         }
+
+        // recursive flag (optional; default true)
+        cJSON *recursive = cJSON_GetObjectItem(path_item, "recursive");
+        if (cJSON_IsBool(recursive))
+        {
+            config->paths[i].recursive = cJSON_IsTrue(recursive) ? 1 : 0;
+        }
+        else
+        {
+            config->paths[i].recursive = 1;
+        }
+
+        // excluded_subdirs (optional)
+        cJSON *excluded = cJSON_GetObjectItem(path_item, "excluded_subdirs");
+        if (cJSON_IsArray(excluded))
+        {
+            config->paths[i].num_excluded_subdirs = cJSON_GetArraySize(excluded);
+            config->paths[i].excluded_subdirs = (char **)malloc(config->paths[i].num_excluded_subdirs * sizeof(char *));
+            for (int j = 0; j < config->paths[i].num_excluded_subdirs; j++)
+            {
+                config->paths[i].excluded_subdirs[j] = strdup(cJSON_GetArrayItem(excluded, j)->valuestring);
+            }
+        }
+        else
+        {
+            config->paths[i].excluded_subdirs = NULL;
+            config->paths[i].num_excluded_subdirs = 0;
+        }
+
+        // included_subdirs (optional)
+        cJSON *included = cJSON_GetObjectItem(path_item, "included_subdirs");
+        if (cJSON_IsArray(included))
+        {
+            config->paths[i].num_included_subdirs = cJSON_GetArraySize(included);
+            config->paths[i].included_subdirs = (char **)malloc(config->paths[i].num_included_subdirs * sizeof(char *));
+            for (int j = 0; j < config->paths[i].num_included_subdirs; j++)
+            {
+                config->paths[i].included_subdirs[j] = strdup(cJSON_GetArrayItem(included, j)->valuestring);
+            }
+        }
+        else
+        {
+            config->paths[i].included_subdirs = NULL;
+            config->paths[i].num_included_subdirs = 0;
+        }
     }
 
     cJSON_Delete(json);
@@ -116,6 +161,22 @@ void free_config(configuration *config)
             free(config->paths[i].allowed_extensions[j]);
         }
         free(config->paths[i].allowed_extensions);
+        if (config->paths[i].excluded_subdirs)
+        {
+            for (int j = 0; j < config->paths[i].num_excluded_subdirs; j++)
+            {
+                free(config->paths[i].excluded_subdirs[j]);
+            }
+            free(config->paths[i].excluded_subdirs);
+        }
+        if (config->paths[i].included_subdirs)
+        {
+            for (int j = 0; j < config->paths[i].num_included_subdirs; j++)
+            {
+                free(config->paths[i].included_subdirs[j]);
+            }
+            free(config->paths[i].included_subdirs);
+        }
     }
     free(config->paths);
     free(config);

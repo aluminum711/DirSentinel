@@ -22,7 +22,7 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y mingw-w64
 
     - name: Compile application
-      run: x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c utils.c cJSON.c service.c -lws2_32 -lole32 -static
+      run: x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c utils.c cJSON.c service.c -lws2_32 -lole32 -ladvapi32 -static
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -45,4 +45,6 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: dirsentinel.exe
+        files: |
+          dirsentinel.exe
+          config.template.json

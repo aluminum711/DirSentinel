@@ -18,13 +18,15 @@
 **编译命令:**
 
 ```bash
-x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c utils.c cJSON.c service.c -lws2_32 -lole32 -static
+x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c utils.c cJSON.c service.c -lws2_32 -lole32 -lgnurx -static
 ```
 
 *   `-o dirsentinel.exe`: 指定输出的可执行文件名。
 *   `main.c monitor.c ... service.c`: 列出所有需要编译的 `.c` 源文件。
 *   `-lws2_32 -lole32`: 链接 Windows 必需的库。
 *   `-static`: （推荐）静态链接所有库，使得 `dirsentinel.exe` 可以在没有安装特定依赖的 Windows 系统上独立运行。
+
+注意：为支持正则表达式，需要在 MinGW-w64 环境安装并链接 `libgnurx`（有的环境库名为 `libregex`，可用 `-lregex`）。如果遇到链接错误，请安装相应的正则库并更换链接参数。
 
 编译成功后，您会得到一个 `dirsentinel.exe` 文件。
 
@@ -74,7 +76,10 @@ x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c uti
                 "type": "size_gb",
                 "value": 10
             },
-            "allowed_extensions": [".log", ".tmp", ".bak"]
+            "allowed_extensions": [".log", ".tmp", ".bak"],
+            "recursive": true,
+            "excluded_subdirs": ["cache", "tmp"],
+            "included_subdirs": []
         },
         {
             "path": "C:\\Users\\YourUser\\Downloads",
@@ -82,7 +87,8 @@ x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c uti
                 "type": "percentage",
                 "value": 5
             },
-            "allowed_extensions": [".zip", ".iso"]
+            "allowed_extensions": [".zip", ".iso"],
+            "recursive": false
         }
     ]
 }
@@ -94,6 +100,32 @@ x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c uti
     *   `type`: 策略类型，可以是 `"size_gb"` 或 `"percentage"`。
     *   `value`: 策略的阈值。
 *   `allowed_extensions`: 一个字符串数组，定义了哪些文件扩展名是可以被删除的。服务**只会**删除这些类型的文件。
+*   `recursive`: （可选，默认 `true`）是否递归扫描子目录。设为 `false` 时仅扫描主目录中的文件。
+*   `excluded_subdirs`: （可选）需要**跳过**的子目录名称列表（仅匹配一级子目录名）。当 `recursive=true` 时有效。
+*   `included_subdirs`: （可选）需要**限定**递归进入的子目录名称列表（仅匹配一级子目录名）。当该列表非空时，只有列出的子目录会被递归扫描；其优先级高于 `excluded_subdirs`。
+
+### `allowed_extensions` 支持正则表达式
+
+为兼容旧配置，数组项如果以 `.` 开头（如 `.log`、`.zip`），仍然按“扩展名完全匹配”处理。
+除此之外，您可以提供**正则表达式**，将对“完整文件名”进行匹配（POSIX 扩展正则）。示例：
+
+```json
+{
+  "allowed_extensions": [
+    ".zip",                          // 旧行为：只匹配扩展名 .zip
+    ".bak",                          // 旧行为：只匹配扩展名 .bak
+    ".tmp",                          // 旧行为：只匹配扩展名 .tmp
+    ".*\\.(zip|7z)$",               // 正则：匹配 .zip 或 .7z 结尾的文件名
+    "^backup_\\d{8}\\.log$"       // 正则：匹配如 backup_20240101.log 的文件名
+  ]
+}
+```
+
+说明：
+- 当条目以 `.` 开头时，按扩展名比较（与旧版本行为一致）。
+- 其他条目按正则表达式处理，匹配**完整文件名**（不包含路径）。
+- 正则遵循 POSIX 扩展语法（`regcomp/REG_EXTENDED`）。
+- JSON 中需要对反斜杠进行转义，例如 `\\d`、`\\.`。
 
 ## 5. 策略判断方式
 
@@ -135,6 +167,12 @@ x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c uti
 
 *   **扫描范围**: 服务会递归地扫描整个被监控的文件夹及其所有子文件夹。
 *   **筛选文件**: 在扫描过程中，它只关注文件名后缀在 `allowed_extensions` 列表中的文件。
+    - 若条目以 `.` 开头，则按扩展名精确匹配（如 `.zip`）。
+    - 其他条目按正则表达式匹配整个文件名（如 `^backup_\\d{8}\\.log$`）。
+*   **子目录控制**:
+    - 若 `recursive=false`，不进入任何子目录。
+    - 若 `included_subdirs` 非空，仅进入列出的子目录。
+    - 若 `excluded_subdirs` 包含某子目录名，则跳过该子目录的递归扫描。
 *   **排序方式**: 它会比较所有符合条件的文件（来自所有子目录）的**最后修改日期**，并找到那个**最旧**的文件。
 *   **执行删除**: 服务会删除那个最旧的文件，并记录一条日志。
 *   **循环检查**: 删除一个文件后，服务会**立即重新计算**文件夹的总大小并再次检查策略。如果大小仍然超标，它会重复上述“扫描->筛选->排序->删除”的步骤，删除下一个最旧的文件。这个过程会一直持续，直到文件夹大小降到策略阈值以下。

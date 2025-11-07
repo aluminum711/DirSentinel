@@ -1,0 +1,24 @@
+{
+  "check_interval_seconds": 60,
+  "policies": [
+    {
+      "path": "C:\\Users\\YourUser\\Downloads",
+      "policy": { "type": "percentage", "value": 20 },
+      "allowed_extensions": [
+        ".zip",
+        ".iso",
+        ".*\\.(zip|7z)$",
+        "^backup_\\d{8}\\.log$"
+      ],
+      "recursive": true,
+      "excluded_subdirs": ["cache", "tmp"],
+      "included_subdirs": []
+    },
+    {
+      "path": "D:\\Temp",
+      "policy": { "type": "size_gb", "value": 10 },
+      "allowed_extensions": [".log", ".tmp", ".bak"],
+      "recursive": false
+    }
+  ]
+}

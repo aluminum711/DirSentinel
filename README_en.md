@@ -17,10 +17,12 @@ This project uses `MinGW-w64` for cross-compiling to generate a Windows executab
 Command:
 
 ```bash
-x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c utils.c cJSON.c service.c -lws2_32 -lole32 -static
+x86_64-w64-mingw32-gcc -o dirsentinel.exe main.c monitor.c config.c logger.c utils.c cJSON.c service.c -lws2_32 -lole32 -lgnurx -static
 ```
 
 - `-static` is recommended so that `dirsentinel.exe` runs on Windows without extra dependencies.
+
+Note: Regex support requires linking a regex library in MinGW-w64. Typically `libgnurx` (use `-lgnurx`), or in some toolchains `libregex` (use `-lregex`). Install the appropriate package if you hit linker errors.
 
 ## 3. Running (Service Management)
 
@@ -44,12 +46,16 @@ Example:
         {
             "path": "D:\\Temp",
             "policy": { "type": "size_gb", "value": 10 },
-            "allowed_extensions": [".log", ".tmp", ".bak"]
+            "allowed_extensions": [".log", ".tmp", ".bak"],
+            "recursive": true,
+            "excluded_subdirs": ["cache", "tmp"],
+            "included_subdirs": []
         },
         {
             "path": "C:\\Users\\YourUser\\Downloads",
             "policy": { "type": "percentage", "value": 5 },
-            "allowed_extensions": [".zip", ".iso"]
+            "allowed_extensions": [".zip", ".iso"],
+            "recursive": false
         }
     ]
 }
@@ -61,6 +67,31 @@ Example:
   - `type`: Either `"size_gb"` or `"percentage"`.
   - `value`: Threshold value (GB or percentage depending on type).
 - `allowed_extensions`: Whitelist of file extensions. Only files with these extensions are eligible for deletion.
+- `recursive` (optional, default `true`): Whether to recursively scan subdirectories. Set to `false` to scan only the top-level directory.
+- `excluded_subdirs` (optional): Names of immediate subdirectories to skip when `recursive=true`.
+- `included_subdirs` (optional): If non-empty, only subdirectories listed here are descended into (takes precedence over `excluded_subdirs`).
+
+### Regex support in `allowed_extensions`
+
+For backward compatibility, entries starting with `.` (e.g., `.log`, `.zip`) are treated as literal extension matches.
+Additionally, you can provide POSIX Extended regular expressions that match the full filename (not the path). Examples:
+
+```json
+{
+  "allowed_extensions": [
+    ".zip",                        // legacy behavior: extension equals ".zip"
+    ".bak",                        // legacy behavior: extension equals ".bak"
+    ".tmp",                        // legacy behavior: extension equals ".tmp"
+    ".*\\.(zip|7z)$",             // regex: filenames ending with .zip or .7z
+    "^backup_\\d{8}\\.log$"     // regex: e.g., backup_20240101.log
+  ]
+}
+```
+
+Notes:
+- Entries starting with `.` use literal extension matching.
+- Other entries are compiled as POSIX Extended regex and matched against the filename.
+- Escape backslashes in JSON strings (e.g., `\\d`, `\\.`).
 
 ## 5. Policy Evaluation
 
@@ -95,6 +126,12 @@ When any policy is triggered, the service starts a loop until compliance:
 
 - Scan: Recursively traverse the monitored folder and subfolders.
 - Filter: Consider only files with extensions listed in `allowed_extensions`.
+  - If entry starts with `.`, match by literal extension (e.g., `.zip`).
+  - Otherwise, match by regex against the filename (e.g., `^backup_\\d{8}\\.log$`).
+- Subdirectory control:
+  - If `recursive=false`, do not descend into any subdirectories.
+  - If `included_subdirs` is non-empty, only descend into those listed.
+  - If `excluded_subdirs` includes a subdir name, skip descending into it.
 - Select oldest: Compare `LastWriteTime` to find the oldest eligible file.
 - Delete: Remove the oldest file and log the action.
 - Recheck: Recompute size and re-evaluate policy; repeat until the folder meets the policy.
